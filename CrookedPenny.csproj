@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Sts2Path Condition="'$(Sts2Path)' == ''">D:\SteamLibrary\steamapps\common\Slay the Spire 2</Sts2Path>
+    <Sts2DataPath Condition="'$(Sts2DataPath)' == ''">$(Sts2Path)\data_sts2_windows_x86_64</Sts2DataPath>
+    <BaseLibPath Condition="'$(BaseLibPath)' == ''">$(Sts2Path)\..\..\workshop\content\2868840\3737335127\BaseLib</BaseLibPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="sts2" HintPath="$(Sts2DataPath)\sts2.dll" Private="false" />
+    <Reference Include="GodotSharp" HintPath="$(Sts2DataPath)\GodotSharp.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(Sts2DataPath)\0Harmony.dll" Private="false" />
+    <Reference Include="BaseLib" HintPath="$(BaseLibPath)\BaseLib.dll" Private="false" />
+  </ItemGroup>
+</Project>

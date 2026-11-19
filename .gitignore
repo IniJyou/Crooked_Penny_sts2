@@ -1,0 +1,7 @@
+.dev/
+artifacts/
+bin/
+obj/
+.godot/
+assets/coin-source.png
+使用场景/
