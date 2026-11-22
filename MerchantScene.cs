@@ -3,6 +3,7 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.CardSelection;
 using MegaCrit.Sts2.Core.Commands;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Merchant;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Helpers;
@@ -30,12 +31,14 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
     private readonly List<Gift> _gifts = [];
     private CoinKey Key => new(CoinScene.Merchant, inventory.Player.NetId);
     private CoinResult _result;
-    private bool _freeRemovalUsed;
+    private int _freeRemovalsRemaining;
     private bool _goldTaken;
     private bool _busy;
     private bool _waiting;
     private bool _showGifts;
     private VBoxContainer? _panel;
+    private ScrollContainer? _giftScroll;
+    private int _giftScrollPosition;
     private string? _notice;
     public bool IsBusy => _busy;
 
@@ -69,7 +72,8 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
             CoinAction.Claim when _result == CoinResult.Lost => !_goldTaken,
             CoinAction.Claim when _result == CoinResult.Won =>
                 command.Option >= 0 && command.Option < _gifts.Count && _gifts[command.Option].Remaining > 0,
-            CoinAction.RemoveCard => _result == CoinResult.Won && !_freeRemovalUsed,
+            CoinAction.RemoveCard => _result == CoinResult.Won && _freeRemovalsRemaining > 0 &&
+                inventory.Player.Deck.Cards.Any(card => card.IsRemovable),
             _ => false
         };
     }
@@ -83,12 +87,15 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
             if (command.Won)
             {
                 var copies = command.Multiplier - 1;
+                _freeRemovalsRemaining = copies;
                 if (copies > 0)
                 {
                     _gifts.AddRange(inventory.RelicEntries.Where(entry => entry.IsStocked)
                         .Select(entry => new Gift(entry.Model!.ClonePreservingMutability(), copies)));
                     _gifts.AddRange(inventory.PotionEntries.Where(entry => entry.IsStocked)
                         .Select(entry => new Gift(entry.Model!.ClonePreservingMutability(), copies)));
+                    _gifts.AddRange(inventory.CardEntries.Where(entry => entry.IsStocked)
+                        .Select(entry => new Gift(entry.CreationResult!.Card.ClonePreservingMutability(), copies)));
                 }
             }
             Render();
@@ -117,7 +124,7 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
                 if (card != null)
                 {
                     await CardPileCmd.RemoveFromDeck(card);
-                    _freeRemovalUsed = true;
+                    _freeRemovalsRemaining--;
                 }
             }
             else if (_result == CoinResult.Lost)
@@ -138,13 +145,23 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
 
     private async Task ClaimGift(Gift gift, Player player)
     {
-        switch (gift.Model.ClonePreservingMutability())
+        switch (gift.Model)
         {
+            case CardModel card:
+                var copy = player.RunState.CloneCard(card);
+                if ((await CardPileCmd.Add(copy, PileType.Deck)).success)
+                    gift.Remaining--;
+                else
+                {
+                    player.RunState.RemoveCard(copy);
+                    _notice = CoinUi.Text("当前无法领取这张卡牌。", "You cannot take this card right now.");
+                }
+                break;
             case RelicModel relic:
-                await RelicCmd.Obtain(relic, player);
+                await RelicCmd.Obtain((RelicModel)relic.ClonePreservingMutability(), player);
                 gift.Remaining--;
                 break;
-            case PotionModel potion when (await PotionCmd.TryToProcure(potion, player)).success:
+            case PotionModel potion when (await PotionCmd.TryToProcure((PotionModel)potion.ClonePreservingMutability(), player)).success:
                 gift.Remaining--;
                 break;
             case PotionModel:
@@ -161,7 +178,7 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
         _panel = new VBoxContainer
         {
             Name = "CrookedPennyShop",
-            AnchorLeft = 0.72f, AnchorRight = 0.90f, AnchorTop = 0.12f, AnchorBottom = 0.12f,
+            AnchorLeft = 0.72f, AnchorRight = 0.90f, OffsetTop = 164, OffsetBottom = 164,
             GrowHorizontal = Control.GrowDirection.Begin, GrowVertical = Control.GrowDirection.End,
             Visible = screen.IsOpen
         };
@@ -174,19 +191,22 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
         if (_panel is not { } panel || !GodotObject.IsInstanceValid(panel))
             return;
 
+        if (_giftScroll is { } previousScroll)
+            _giftScrollPosition = previousScroll.ScrollVertical;
+        _giftScroll = null;
+
         foreach (var child in panel.GetChildren())
         {
             panel.RemoveChild(child);
             child.QueueFree();
         }
 
-        var flip = CoinUi.FlipButton(CoinScene.Merchant);
+        var flip = CoinUi.AddFlipButton(panel, CoinScene.Merchant);
         if (_result == CoinResult.Pending)
             flip.Pressed += () => Request(CoinAction.Flip);
         else
             CoinUi.ShowResult(flip, _result);
         flip.Disabled |= _busy || _waiting;
-        panel.AddChild(flip);
 
         if (_result == CoinResult.Lost)
         {
@@ -194,11 +214,11 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
             foreach (var node in new[] { "%CharacterCards", "%ColorlessCards", "%Relics", "%Potions", "%BlitzSlots", "%BlitzSelectionText", "%MerchantCardRemoval" })
                 screen.GetNodeOrNull<Control>(node)?.Hide();
             if (!_goldTaken)
-                AddAction(CoinUi.Text("领取 1 金币", "Claim 1 gold"), CoinAction.Claim);
+                AddAction(panel, CoinUi.Text("领取 1 金币", "Claim 1 gold"), CoinAction.Claim);
         }
         else if (_result == CoinResult.Won)
         {
-            var remaining = _gifts.Sum(gift => gift.Remaining) + (_freeRemovalUsed ? 0 : 1);
+            var remaining = _gifts.Sum(gift => gift.Remaining) + _freeRemovalsRemaining;
             if (remaining > 0)
             {
                 var toggle = CoinUi.CreateButton(_showGifts ? CoinUi.Text("收起免费奖励", "Hide free rewards") :
@@ -208,15 +228,37 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
             }
 
             if (_showGifts)
-                RenderGifts();
+                RenderGifts(panel);
         }
 
         if (_notice != null)
             panel.AddChild(new Label { Text = _notice });
     }
 
-    private void RenderGifts()
+    private void RenderGifts(VBoxContainer panel)
     {
+        if (_freeRemovalsRemaining > 0)
+        {
+            var removal = AddAction(panel, CoinUi.Text($"免费删牌 ({_freeRemovalsRemaining})",
+                $"Remove a card for free ({_freeRemovalsRemaining})"), CoinAction.RemoveCard);
+            removal.Disabled |= !inventory.Player.Deck.Cards.Any(card => card.IsRemovable);
+        }
+
+        if (_gifts.All(gift => gift.Remaining <= 0))
+            return;
+
+        var scroll = new ScrollContainer
+        {
+            CustomMinimumSize = new Vector2(0, 300),
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            FollowFocus = true
+        };
+        var list = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        scroll.AddChild(list);
+        panel.AddChild(scroll);
+        _giftScroll = scroll;
+        scroll.SetDeferred(ScrollContainer.PropertyName.ScrollVertical, _giftScrollPosition);
+
         for (var i = 0; i < _gifts.Count; i++)
         {
             var gift = _gifts[i];
@@ -225,23 +267,26 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
 
             var title = gift.Model switch
             {
+                CardModel card => card.Title,
                 RelicModel relic => relic.Title.GetFormattedText(),
                 PotionModel potion => potion.Title.GetFormattedText(),
                 _ => ""
             };
             var quantity = gift.Remaining > 1 ? $" ×{gift.Remaining}" : "";
-            AddAction(CoinUi.Text($"免费领取 · {title}{quantity}", $"Free · {title}{quantity}"), CoinAction.Claim, i);
+            var label = CoinUi.Text($"免费领取 · {title}{quantity}", $"Free · {title}{quantity}");
+            var claim = AddAction(list, label, CoinAction.Claim, i);
+            claim.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+            claim.TooltipText = label;
         }
-        if (!_freeRemovalUsed)
-            AddAction(CoinUi.Text("免费删牌", "Remove a card for free"), CoinAction.RemoveCard);
     }
 
-    private void AddAction(string label, CoinAction action, int option = 0)
+    private Button AddAction(Control parent, string label, CoinAction action, int option = 0)
     {
         var button = CoinUi.CreateButton(label);
         button.Disabled = _busy || _waiting;
         button.Pressed += () => Request(action, option);
-        _panel!.AddChild(button);
+        parent.AddChild(button);
+        return button;
     }
 
     private void Request(CoinAction action, int option = 0)

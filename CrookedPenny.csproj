@@ -3,6 +3,7 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts/**</DefaultItemExcludes>
     <Sts2Path Condition="'$(Sts2Path)' == ''">D:\SteamLibrary\steamapps\common\Slay the Spire 2</Sts2Path>
     <Sts2DataPath Condition="'$(Sts2DataPath)' == ''">$(Sts2Path)\data_sts2_windows_x86_64</Sts2DataPath>
     <BaseLibPath Condition="'$(BaseLibPath)' == ''">$(Sts2Path)\..\..\workshop\content\2868840\3737335127\BaseLib</BaseLibPath>

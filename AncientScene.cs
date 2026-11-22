@@ -160,7 +160,7 @@ internal sealed class AncientScene(AncientEventModel ancient, EventOption[] opti
         if (ancient.IsFinished || _startedVanilla)
             return;
 
-        var flip = CoinUi.FlipButton(CoinScene.Ancient);
+        var flip = CoinUi.AddFlipButton(panel, CoinScene.Ancient);
         if (_result == CoinResult.Pending)
             flip.Pressed += () => Request(CoinAction.Flip);
         else
@@ -170,7 +170,6 @@ internal sealed class AncientScene(AncientEventModel ancient, EventOption[] opti
             _screen?.Layout?.ClearOptions();
         }
         flip.Disabled |= _waiting;
-        panel.AddChild(flip);
 
         if (_result == CoinResult.Lost)
         {

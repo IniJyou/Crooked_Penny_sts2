@@ -17,7 +17,12 @@ func _initialize() -> void:
 			for x in coin.get_width():
 				if coin.get_pixel(x, y) == matte:
 					coin.set_pixel(x, y, Color.TRANSPARENT)
-	coin = coin.get_region(coin.get_used_rect())
+	var bounds := coin.get_used_rect()
+	if not bounds.has_area():
+		push_error("The supplied coin image has no visible pixels.")
+		quit(1)
+		return
+	coin = coin.get_region(bounds)
 	var error := ResourceSaver.save(ImageTexture.create_from_image(coin), args[1])
 	if error != OK:
 		push_error("Failed to generate coin texture: %s" % error)

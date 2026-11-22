@@ -204,7 +204,8 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
         box.AddChild(_view);
         collection.AddChild(box);
         Render();
-        _view.GetChildren().OfType<Button>().FirstOrDefault(button => !button.Disabled)?.CallDeferred(Control.MethodName.GrabFocus);
+        _view.FindChildren("*", "Button", true, false).OfType<Button>()
+            .FirstOrDefault(button => !button.Disabled)?.CallDeferred(Control.MethodName.GrabFocus);
     }
 
     private void Render()
@@ -248,10 +249,9 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
                     $"Decided {_decided.Count}/{run.Players.Count} · {_relics.Count} relics"),
                 HorizontalAlignment = HorizontalAlignment.Center
             });
-            var flip = CoinUi.FlipButton(CoinScene.Treasure);
+            var flip = CoinUi.AddFlipButton(view, CoinScene.Treasure);
             flip.Disabled = _waiting || _decided.Contains(localId);
             flip.Pressed += () => Request(CoinAction.Flip);
-            view.AddChild(flip);
             AddButton(view, CoinUi.Text("跳过弯币", "Skip the coin"), () => Request(CoinAction.Pass), flip.Disabled);
         }
         else

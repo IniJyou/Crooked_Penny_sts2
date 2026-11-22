@@ -114,9 +114,15 @@ internal sealed class RewardScene(RewardsSet set) : ICoinScene
 
         _screen = screen;
         var container = screen.GetNode<Control>("%RewardsContainer");
-        _button = CoinUi.FlipButton(CoinScene.Rewards);
-        container.AddChild(_button);
-        container.MoveChild(_button, 0);
+        var scene = (set.Room ?? set.Player.RunState.CurrentRoom) is EventRoom ? CoinScene.EventRewards : CoinScene.Rewards;
+        var coinArea = new Control
+        {
+            AnchorLeft = 0.74f, AnchorRight = 0.74f, AnchorTop = 0.23f, AnchorBottom = 0.23f,
+            MouseFilter = Control.MouseFilterEnum.Ignore
+        };
+        screen.AddChild(coinArea);
+        _button = CoinUi.AddFlipButton(coinArea, scene);
+        screen.Completed += coinArea.Hide;
         if (_result != CoinResult.Pending)
             CoinUi.ShowResult(_button, _result);
         _button.Pressed += () =>
