@@ -18,10 +18,11 @@ internal sealed class RelicBar
         _inventory = inventory;
         _toggle = new Button
         {
-            Name = "CrookedPennyRelicToggle", Size = new Vector2(30, 28), Visible = false,
+            Name = "CrookedPennyRelicToggle", Visible = false,
             MouseDefaultCursorShape = Control.CursorShape.PointingHand
         };
-        inventory.GetParent().AddChild(_toggle);
+        _toggle.AddThemeFontSizeOverride("font_size", 20);
+        inventory.AddChild(_toggle);
         _toggle.Pressed += () =>
         {
             CoinUiPreferences.RelicsCollapsed = !CoinUiPreferences.RelicsCollapsed;
@@ -29,9 +30,6 @@ internal sealed class RelicBar
         };
         inventory.RelicsChanged += QueueRefresh;
         inventory.Resized += QueueRefresh;
-        inventory.ItemRectChanged += PlaceToggle;
-        inventory.VisibilityChanged += PlaceToggle;
-        inventory.TreeExiting += _toggle.QueueFree;
         QueueRefresh();
     }
 
@@ -46,55 +44,50 @@ internal sealed class RelicBar
     private void Refresh()
     {
         _refreshQueued = false;
-        if (!GodotObject.IsInstanceValid(_inventory) || !_inventory.IsInsideTree())
+        if (!GodotObject.IsInstanceValid(_inventory) || !GodotObject.IsInstanceValid(_toggle) || !_inventory.IsInsideTree())
             return;
 
         var relics = _inventory.RelicNodes.Where(relic => relic.GetParent() == _inventory).ToArray();
-        var firstRow = 0;
-        var width = 0f;
         var gap = _inventory.GetThemeConstant("h_separation", "FlowContainer");
-        foreach (var relic in relics)
-        {
-            var nextWidth = width + (firstRow > 0 ? gap : 0) + relic.GetCombinedMinimumSize().X;
-            if (firstRow > 0 && nextWidth > _inventory.Size.X)
-                break;
-            width = nextWidth;
-            firstRow++;
-        }
-
-        _overflow = firstRow < relics.Length;
+        _overflow = CountInFirstRow(relics, _inventory.Size.X, gap) < relics.Length;
         var collapsed = CoinUiPreferences.RelicsCollapsed;
         var action = collapsed ? CoinUi.Text("展开遗物", "Expand relics") : CoinUi.Text("收起遗物", "Collapse relics");
-        _toggle.Text = collapsed ? "+" : "−";
+        _toggle.Text = action;
         _toggle.AccessibilityName = action;
-        _toggle.TooltipText = action;
-        PlaceToggle();
+        if (_overflow)
+        {
+            _toggle.CustomMinimumSize = new Vector2(114, relics[0].GetCombinedMinimumSize().Y);
+            if (_toggle.GetIndex() != 0)
+                _inventory.MoveChild(_toggle, 0);
+        }
+        else if (_toggle.HasFocus() && relics.Length > 0)
+            relics[0].GrabFocus();
+        _toggle.Visible = _overflow;
+
+        var firstRow = collapsed && _overflow
+            ? CountInFirstRow(relics, _inventory.Size.X - _toggle.GetCombinedMinimumSize().X - gap, gap)
+            : relics.Length;
         for (var i = 0; i < relics.Length; i++)
         {
-            var show = !collapsed || i < firstRow;
+            var show = i < firstRow;
             if (!show && relics[i].HasFocus() && _toggle.IsVisibleInTree())
                 _toggle.GrabFocus();
             relics[i].Visible = show;
         }
-        if (!_overflow && _toggle.HasFocus() && relics.Length > 0)
-            relics[0].GrabFocus();
         _inventory.UpdateNavigation();
     }
 
-    private void PlaceToggle()
+    private static int CountInFirstRow(IEnumerable<NRelicInventoryHolder> relics, float available, int gap)
     {
-        if (!GodotObject.IsInstanceValid(_toggle) || !_inventory.IsInsideTree())
-            return;
-
-        var viewport = _inventory.GetViewportRect();
-        var toLocal = _inventory.GetGlobalTransformWithCanvas().AffineInverse();
-        var near = toLocal * viewport.Position;
-        var far = toLocal * viewport.End;
-        var availableRight = far.X - _inventory.Size.X;
-        var offset = availableRight >= _toggle.Size.X + 4 ? new Vector2(_inventory.Size.X + 4, 0) :
-            near.X <= -_toggle.Size.X - 4 ? new Vector2(-_toggle.Size.X - 4, 0) : new Vector2(0, -_toggle.Size.Y - 4);
-        _toggle.GlobalPosition = _inventory.GetGlobalTransform() * offset;
-        _toggle.Visible = _overflow && _inventory.IsVisibleInTree() && offset.Y >= near.Y && offset.Y + _toggle.Size.Y <= far.Y;
+        var count = 0;
+        foreach (var relic in relics)
+        {
+            available -= relic.GetCombinedMinimumSize().X + (count > 0 ? gap : 0);
+            if (count > 0 && available < 0)
+                break;
+            count++;
+        }
+        return count;
     }
 
     private void LinkFocus()

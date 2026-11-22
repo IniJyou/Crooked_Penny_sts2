@@ -9,6 +9,7 @@ using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game;
+using MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext;
 using MegaCrit.Sts2.Core.Nodes.Screens.Shops;
 using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
@@ -28,7 +29,11 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
         internal int Remaining { get; set; } = remaining;
     }
 
+    private sealed record ShopView(NMerchantInventory Screen, Control Root, Button Flip, Button Gold, PanelContainer Rewards,
+        Button Toggle, Button Removal, ScrollContainer Scroll, VBoxContainer List, Label Notice);
+
     private readonly List<Gift> _gifts = [];
+    private readonly List<Button> _giftButtons = [];
     private CoinKey Key => new(CoinScene.Merchant, inventory.Player.NetId);
     private CoinResult _result;
     private int _freeRemovalsRemaining;
@@ -36,9 +41,7 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
     private bool _busy;
     private bool _waiting;
     private bool _showGifts;
-    private VBoxContainer? _panel;
-    private ScrollContainer? _giftScroll;
-    private int _giftScrollPosition;
+    private ShopView? _view;
     private string? _notice;
     public bool IsBusy => _busy;
 
@@ -172,98 +175,117 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
 
     private void Attach(NMerchantInventory screen)
     {
-        if (_panel != null && GodotObject.IsInstanceValid(_panel))
+        if (_view is { } existing && GodotObject.IsInstanceValid(existing.Root))
             return;
 
-        _panel = new VBoxContainer
+        // The shop controls sit in front of the relic rows but hide whenever the shop loses screen focus.
+        var layer = new CanvasLayer { Name = "CrookedPennyShopLayer", Layer = 1 };
+        var root = new Control { Name = "CrookedPennyShop", MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
+        screen.AddChild(layer);
+        layer.AddChild(root);
+        root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        var controls = new VBoxContainer
         {
-            Name = "CrookedPennyShop",
             AnchorLeft = 0.72f, AnchorRight = 0.90f, OffsetTop = 164, OffsetBottom = 164,
             GrowHorizontal = Control.GrowDirection.Begin, GrowVertical = Control.GrowDirection.End,
-            Visible = screen.IsOpen
+            MouseFilter = Control.MouseFilterEnum.Ignore
         };
-        screen.AddChild(_panel);
-        Render();
-    }
+        root.AddChild(controls);
+        var flip = CoinUi.AddFlipButton(controls, CoinScene.Merchant);
+        flip.Pressed += () => Request(CoinAction.Flip);
+        var gold = AddAction(controls, CoinUi.Text("领取 1 金币", "Claim 1 gold"), CoinAction.Claim);
 
-    private void Render()
-    {
-        if (_panel is not { } panel || !GodotObject.IsInstanceValid(panel))
-            return;
-
-        if (_giftScroll is { } previousScroll)
-            _giftScrollPosition = previousScroll.ScrollVertical;
-        _giftScroll = null;
-
-        foreach (var child in panel.GetChildren())
+        var rewards = new PanelContainer
         {
-            panel.RemoveChild(child);
-            child.QueueFree();
-        }
-
-        var flip = CoinUi.AddFlipButton(panel, CoinScene.Merchant);
-        if (_result == CoinResult.Pending)
-            flip.Pressed += () => Request(CoinAction.Flip);
-        else
-            CoinUi.ShowResult(flip, _result);
-        flip.Disabled |= _busy || _waiting;
-
-        if (_result == CoinResult.Lost)
+            Name = "CrookedPennyFreeRewards",
+            AnchorLeft = 0.74f, AnchorRight = 0.94f, AnchorTop = 0.42f, AnchorBottom = 0.42f,
+            GrowVertical = Control.GrowDirection.End
+        };
+        var background = new StyleBoxFlat
         {
-            var screen = (NMerchantInventory)panel.GetParent();
-            foreach (var node in new[] { "%CharacterCards", "%ColorlessCards", "%Relics", "%Potions", "%BlitzSlots", "%BlitzSelectionText", "%MerchantCardRemoval" })
-                screen.GetNodeOrNull<Control>(node)?.Hide();
-            if (!_goldTaken)
-                AddAction(panel, CoinUi.Text("领取 1 金币", "Claim 1 gold"), CoinAction.Claim);
-        }
-        else if (_result == CoinResult.Won)
-        {
-            var remaining = _gifts.Sum(gift => gift.Remaining) + _freeRemovalsRemaining;
-            if (remaining > 0)
-            {
-                var toggle = CoinUi.CreateButton(_showGifts ? CoinUi.Text("收起免费奖励", "Hide free rewards") :
-                    CoinUi.Text($"查看免费奖励 ({remaining})", $"Free rewards ({remaining})"));
-                toggle.Pressed += () => { _showGifts = !_showGifts; Render(); };
-                panel.AddChild(toggle);
-            }
-
-            if (_showGifts)
-                RenderGifts(panel);
-        }
-
-        if (_notice != null)
-            panel.AddChild(new Label { Text = _notice });
-    }
-
-    private void RenderGifts(VBoxContainer panel)
-    {
-        if (_freeRemovalsRemaining > 0)
-        {
-            var removal = AddAction(panel, CoinUi.Text($"免费删牌 ({_freeRemovalsRemaining})",
-                $"Remove a card for free ({_freeRemovalsRemaining})"), CoinAction.RemoveCard);
-            removal.Disabled |= !inventory.Player.Deck.Cards.Any(card => card.IsRemovable);
-        }
-
-        if (_gifts.All(gift => gift.Remaining <= 0))
-            return;
-
+            BgColor = new Color(0.09f, 0.13f, 0.16f, 0.96f),
+            BorderColor = new Color(0.54f, 0.42f, 0.24f),
+            ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 6, ContentMarginBottom = 6
+        };
+        background.SetBorderWidthAll(1);
+        background.SetCornerRadiusAll(6);
+        rewards.AddThemeStyleboxOverride("panel", background);
+        root.AddChild(rewards);
+        var rows = new VBoxContainer();
+        rewards.AddChild(rows);
+        var toggle = CoinUi.CreateButton("");
+        toggle.Name = "CrookedPennyFreeRewardsHandle";
+        toggle.TooltipText = CoinUi.Text("按住右键拖动免费奖励栏", "Right-drag to move the free rewards panel");
+        toggle.Pressed += () => { _showGifts = !_showGifts; Render(); };
+        rows.AddChild(toggle);
+        var removal = AddAction(rows, "", CoinAction.RemoveCard);
         var scroll = new ScrollContainer
         {
+            Name = "CrookedPennyFreeRewardsScroll",
             CustomMinimumSize = new Vector2(0, 300),
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
             FollowFocus = true
         };
         var list = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         scroll.AddChild(list);
-        panel.AddChild(scroll);
-        _giftScroll = scroll;
-        scroll.SetDeferred(ScrollContainer.PropertyName.ScrollVertical, _giftScrollPosition);
+        rows.AddChild(scroll);
+        var notice = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        rows.AddChild(notice);
+        _giftButtons.Clear();
+        _view = new ShopView(screen, root, flip, gold, rewards, toggle, removal, scroll, list, notice);
+        CoinUi.EnableRightDrag(root, rewards, toggle, "MerchantRewards");
 
+        var context = ActiveScreenContext.Instance;
+        void RefreshVisibility()
+        {
+            if (GodotObject.IsInstanceValid(root))
+                root.Visible = screen.IsOpen && screen.IsVisibleInTree() && context.IsCurrent(screen);
+        }
+        context.Updated += RefreshVisibility;
+        screen.VisibilityChanged += RefreshVisibility;
+        screen.TreeExiting += () => context.Updated -= RefreshVisibility;
+        RefreshVisibility();
+        Render();
+    }
+
+    private void Render()
+    {
+        if (_view is not { } view || !GodotObject.IsInstanceValid(view.Root))
+            return;
+
+        view.Flip.Disabled = _result != CoinResult.Pending || _busy || _waiting;
+        if (_result != CoinResult.Pending)
+            CoinUi.ShowResult(view.Flip, _result);
+        view.Gold.Visible = _result == CoinResult.Lost && !_goldTaken;
+        view.Gold.Disabled = _busy || _waiting;
+        if (_result == CoinResult.Lost)
+        {
+            foreach (var node in new[] { "%CharacterCards", "%ColorlessCards", "%Relics", "%Potions", "%BlitzSlots", "%BlitzSelectionText", "%MerchantCardRemoval" })
+                view.Screen.GetNodeOrNull<Control>(node)?.Hide();
+        }
+
+        var availableItems = _gifts.Sum(gift => gift.Remaining);
+        var total = availableItems + _freeRemovalsRemaining;
+        view.Rewards.Visible = _result == CoinResult.Won && total > 0;
+        view.Toggle.Text = _showGifts ? CoinUi.Text("收起免费奖励", "Hide free rewards") :
+            CoinUi.Text($"查看免费奖励 ({total})", $"Free rewards ({total})");
+        view.Removal.Visible = _showGifts && _freeRemovalsRemaining > 0;
+        view.Removal.Disabled = _busy || _waiting || !inventory.Player.Deck.Cards.Any(card => card.IsRemovable);
+        view.Removal.Text = CoinUi.Text($"免费删牌 ({_freeRemovalsRemaining})", $"Remove a card for free ({_freeRemovalsRemaining})");
+        view.Scroll.Visible = _showGifts && availableItems > 0;
+        view.Notice.Text = _notice ?? "";
+        view.Notice.Visible = _showGifts && _notice != null;
+
+        // Keep the ScrollContainer and claim buttons alive so a claim does not reset its scrollbar or focus.
         for (var i = 0; i < _gifts.Count; i++)
         {
             var gift = _gifts[i];
-            if (gift.Remaining <= 0)
-                continue;
+            if (i == _giftButtons.Count)
+            {
+                var button = AddAction(view.List, "", CoinAction.Claim, i);
+                button.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+                _giftButtons.Add(button);
+            }
 
             var title = gift.Model switch
             {
@@ -274,9 +296,11 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
             };
             var quantity = gift.Remaining > 1 ? $" ×{gift.Remaining}" : "";
             var label = CoinUi.Text($"免费领取 · {title}{quantity}", $"Free · {title}{quantity}");
-            var claim = AddAction(list, label, CoinAction.Claim, i);
-            claim.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+            var claim = _giftButtons[i];
+            claim.Text = label;
             claim.TooltipText = label;
+            claim.Visible = gift.Remaining > 0;
+            claim.Disabled = _busy || _waiting;
         }
     }
 
@@ -316,22 +340,6 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
         {
             if (Inventories.TryGetValue(inventory, out var scene))
                 scene.Attach(__instance);
-        }
-    }
-
-    [HarmonyPatch]
-    private static class SetPanelVisibility
-    {
-        private static IEnumerable<System.Reflection.MethodBase> TargetMethods() =>
-        [
-            AccessTools.Method(typeof(NMerchantInventory), nameof(NMerchantInventory.Open)),
-            AccessTools.Method(typeof(NMerchantInventory), nameof(NMerchantInventory.Close))
-        ];
-
-        private static void Postfix(NMerchantInventory __instance)
-        {
-            if (__instance.Inventory is { } inventory && Inventories.TryGetValue(inventory, out var scene))
-                scene._panel?.SetVisible(__instance.IsOpen);
         }
     }
 

@@ -22,13 +22,13 @@ internal static class CoinUi
         var button = CreateButton("");
         button.Name = "CrookedPennyFlip";
         button.AccessibilityName = title;
-        button.CustomMinimumSize = new Vector2(60, 60);
+        button.CustomMinimumSize = new Vector2(120, 120);
         button.Icon = GD.Load<Texture2D>(CoinIcon);
         if (button.Icon == null)
             button.Text = title;
         button.ExpandIcon = true;
         button.IconAlignment = HorizontalAlignment.Center;
-        button.AddThemeConstantOverride("icon_max_width", 48);
+        button.AddThemeConstantOverride("icon_max_width", 96);
         button.TextureFilter = CanvasItem.TextureFilterEnum.Nearest;
         void RefreshTip()
         {
@@ -42,61 +42,68 @@ internal static class CoinUi
         var slot = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         slot.AddChild(button);
         parent.AddChild(slot);
-        AllowRepositioning(slot, button, scene);
+        void FitSlot()
+        {
+            var minimum = button.GetCombinedMinimumSize();
+            slot.CustomMinimumSize = minimum;
+            button.Size = minimum;
+        }
+        EnableRightDrag(slot, button, button, scene.ToString(), FitSlot,
+            () => button.Position = new Vector2(Mathf.Max(0, (slot.Size.X - button.Size.X) / 2), 0));
         return button;
     }
 
-    private static void AllowRepositioning(Control slot, Button button, CoinScene scene)
+    internal static void EnableRightDrag(Control parent, Control movable, Control handle, string key,
+        Action? fit = null, Action? placeDefault = null)
     {
-        var viewport = slot.GetViewport();
-        var saved = CoinUiPreferences.GetPosition(scene);
+        var viewport = parent.GetViewport();
+        var saved = CoinUiPreferences.GetPosition(key);
         Vector2? dragOffset = null;
         var moved = false;
 
         (Vector2 Origin, Vector2 Travel) Bounds(Transform2D transform)
         {
             var view = viewport.GetVisibleRect();
-            var size = (transform.BasisXform(button.Size)).Abs();
+            var size = (transform.BasisXform(movable.Size)).Abs();
             return (view.Position, (view.Size - size).Max(Vector2.Zero));
         }
 
         void Place()
         {
-            if (!GodotObject.IsInstanceValid(slot) || !GodotObject.IsInstanceValid(button) || !slot.IsInsideTree())
+            if (!GodotObject.IsInstanceValid(parent) || !GodotObject.IsInstanceValid(movable) || !movable.IsInsideTree())
                 return;
-            var minimum = button.GetCombinedMinimumSize();
-            slot.CustomMinimumSize = minimum;
-            button.Size = minimum;
+            fit?.Invoke();
             if (saved is { } position)
             {
-                var transform = slot.GetGlobalTransformWithCanvas();
+                var transform = parent.GetGlobalTransformWithCanvas();
                 var (origin, travel) = Bounds(transform);
-                button.Position = transform.AffineInverse() * (origin + travel * position);
+                movable.Position = transform.AffineInverse() * (origin + travel * position);
             }
             else
-                button.Position = new Vector2(Mathf.Max(0, (slot.Size.X - button.Size.X) / 2), 0);
+                placeDefault?.Invoke();
         }
 
         void StopDragging()
         {
             if (moved && saved is { } position)
-                CoinUiPreferences.SetPosition(scene, position);
+                CoinUiPreferences.SetPosition(key, position);
             dragOffset = null;
             moved = false;
         }
 
-        button.GuiInput += input =>
+        handle.GuiInput += input =>
         {
             if (input is InputEventMouseButton { ButtonIndex: MouseButton.Right } mouse)
             {
                 if (mouse.Pressed)
                 {
                     moved = false;
-                    dragOffset = button.GetGlobalTransformWithCanvas().BasisXform(mouse.Position);
+                    dragOffset = handle.GetGlobalTransformWithCanvas() * mouse.Position -
+                        movable.GetGlobalTransformWithCanvas().Origin;
                 }
                 else
                     StopDragging();
-                button.AcceptEvent();
+                handle.AcceptEvent();
             }
             else if (input is InputEventMouseMotion motion && dragOffset is { } offset)
             {
@@ -105,21 +112,24 @@ internal static class CoinUi
                     StopDragging();
                     return;
                 }
-                var transform = slot.GetGlobalTransformWithCanvas();
+                var transform = parent.GetGlobalTransformWithCanvas();
                 var (origin, travel) = Bounds(transform);
-                var topLeft = button.GetGlobalTransformWithCanvas() * motion.Position - offset;
+                var topLeft = handle.GetGlobalTransformWithCanvas() * motion.Position - offset;
                 var distance = (topLeft - origin).Clamp(Vector2.Zero, travel);
                 saved = distance / travel.Max(Vector2.One);
                 moved = true;
                 Place();
-                button.AcceptEvent();
+                handle.AcceptEvent();
             }
         };
-        button.MinimumSizeChanged += Place;
-        slot.ItemRectChanged += Place;
+        movable.MinimumSizeChanged += Place;
+        movable.Resized += Place;
+        parent.ItemRectChanged += Place;
         viewport.SizeChanged += Place;
-        slot.TreeExiting += () =>
+        movable.TreeExiting += () =>
         {
+            if (GodotObject.IsInstanceValid(parent))
+                parent.ItemRectChanged -= Place;
             if (GodotObject.IsInstanceValid(viewport))
                 viewport.SizeChanged -= Place;
         };
@@ -164,18 +174,17 @@ internal static class CoinUiPreferences
 
     static CoinUiPreferences() => Settings.Load(Path);
 
-    internal static Vector2? GetPosition(CoinScene scene)
+    internal static Vector2? GetPosition(string key)
     {
-        var key = scene.ToString();
         if (!Settings.HasSectionKey("coin", key))
             return null;
         var position = Settings.GetValue("coin", key);
         return position.VariantType == Variant.Type.Vector2 ? position.AsVector2() : null;
     }
 
-    internal static void SetPosition(CoinScene scene, Vector2 position)
+    internal static void SetPosition(string key, Vector2 position)
     {
-        Settings.SetValue("coin", scene.ToString(), position);
+        Settings.SetValue("coin", key, position);
         Settings.Save(Path);
     }
 
