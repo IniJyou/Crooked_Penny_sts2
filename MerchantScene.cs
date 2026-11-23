@@ -36,6 +36,7 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
     private readonly List<Button> _giftButtons = [];
     private CoinKey Key => new(CoinScene.Merchant, inventory.Player.NetId);
     private CoinResult _result;
+    private int _multiplier;
     private int _freeRemovalsRemaining;
     private bool _goldTaken;
     private bool _busy;
@@ -87,6 +88,7 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
         if (command.Action == CoinAction.Flip)
         {
             _result = command.Won ? CoinResult.Won : CoinResult.Lost;
+            _multiplier = command.Multiplier;
             if (command.Won)
             {
                 var copies = command.Multiplier - 1;
@@ -201,19 +203,12 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
             AnchorLeft = 0.74f, AnchorRight = 0.94f, AnchorTop = 0.42f, AnchorBottom = 0.42f,
             GrowVertical = Control.GrowDirection.End
         };
-        var background = new StyleBoxFlat
-        {
-            BgColor = new Color(0.09f, 0.13f, 0.16f, 0.96f),
-            BorderColor = new Color(0.54f, 0.42f, 0.24f),
-            ContentMarginLeft = 6, ContentMarginRight = 6, ContentMarginTop = 6, ContentMarginBottom = 6
-        };
-        background.SetBorderWidthAll(1);
-        background.SetCornerRadiusAll(6);
-        rewards.AddThemeStyleboxOverride("panel", background);
+        CoinUi.StylePanel(rewards);
         root.AddChild(rewards);
         var rows = new VBoxContainer();
+        rows.AddThemeConstantOverride("separation", 6);
         rewards.AddChild(rows);
-        var toggle = CoinUi.CreateButton("");
+        var toggle = CoinUi.CreateButton("", featured: true);
         toggle.Name = "CrookedPennyFreeRewardsHandle";
         toggle.TooltipText = CoinUi.Text("按住右键拖动免费奖励栏", "Right-drag to move the free rewards panel");
         toggle.Pressed += () => { _showGifts = !_showGifts; Render(); };
@@ -227,9 +222,11 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
             FollowFocus = true
         };
         var list = new VBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        list.AddThemeConstantOverride("separation", 5);
         scroll.AddChild(list);
         rows.AddChild(scroll);
-        var notice = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
+        var notice = CoinUi.CreateLabel("", accent: true);
+        notice.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         rows.AddChild(notice);
         _giftButtons.Clear();
         _view = new ShopView(screen, root, flip, gold, rewards, toggle, removal, scroll, list, notice);
@@ -255,7 +252,7 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
 
         view.Flip.Disabled = _result != CoinResult.Pending || _busy || _waiting;
         if (_result != CoinResult.Pending)
-            CoinUi.ShowResult(view.Flip, _result);
+            CoinUi.ShowResult(view.Flip, _result, _multiplier);
         view.Gold.Visible = _result == CoinResult.Lost && !_goldTaken;
         view.Gold.Disabled = _busy || _waiting;
         if (_result == CoinResult.Lost)
@@ -283,6 +280,7 @@ internal sealed class MerchantScene(MerchantInventory inventory) : ICoinScene
             if (i == _giftButtons.Count)
             {
                 var button = AddAction(view.List, "", CoinAction.Claim, i);
+                button.Alignment = HorizontalAlignment.Left;
                 button.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
                 _giftButtons.Add(button);
             }

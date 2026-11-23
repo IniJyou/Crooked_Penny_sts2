@@ -35,6 +35,7 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
     private bool _waiting;
     private bool _lost;
     private bool _hasFlipped;
+    private int _lastMultiplier;
     private VBoxContainer? _view;
     private string? _lastRound;
     private bool IsSolo => run.Players.Count == 1;
@@ -87,6 +88,9 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
                 TaskHelper.RunSafely(FinishFailure());
                 return;
             }
+
+            if (command.Action == CoinAction.Flip)
+                _lastMultiplier = command.Multiplier;
 
             if (command.Action == CoinAction.Flip && command.Multiplier > 1)
             {
@@ -200,7 +204,9 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
             AnchorLeft = 0.5f, AnchorRight = 0.5f, AnchorTop = 0.5f, AnchorBottom = 0.5f,
             OffsetLeft = -340, OffsetRight = 340, OffsetTop = -210, OffsetBottom = 210
         };
+        CoinUi.StylePanel(box);
         _view = new VBoxContainer();
+        _view.AddThemeConstantOverride("separation", 6);
         box.AddChild(_view);
         collection.AddChild(box);
         Render();
@@ -222,7 +228,9 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
         var localId = RunManager.Instance.NetService.NetId;
         if (_lost)
         {
-            view.AddChild(new Label { Text = CoinUi.Text("掷空", "Lost the flip"), HorizontalAlignment = HorizontalAlignment.Center });
+            var result = CoinUi.CreateLabel(CoinUi.Text("掷空", "Lost the flip"), accent: true);
+            result.HorizontalAlignment = HorizontalAlignment.Center;
+            view.AddChild(result);
             if (run.Players.Count == 1)
             {
                 AddButton(view, CoinUi.Text("领取 1 金币", "Claim 1 gold"), async () =>
@@ -236,19 +244,17 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
                 AddButton(view, CoinUi.Text("继续", "Continue"), () => { if (!_settling) Finish(); });
             }
             else
-                view.AddChild(new Label { Text = CoinUi.Text("每位玩家获得 1 金币。", "Each player receives 1 gold.") });
+                view.AddChild(CoinUi.CreateLabel(CoinUi.Text("每位玩家获得 1 金币。", "Each player receives 1 gold.")));
 
             return;
         }
 
         if (_round == 0)
         {
-            view.AddChild(new Label
-            {
-                Text = CoinUi.Text($"已决定 {_decided.Count}/{run.Players.Count} · {_relics.Count} 件遗物",
-                    $"Decided {_decided.Count}/{run.Players.Count} · {_relics.Count} relics"),
-                HorizontalAlignment = HorizontalAlignment.Center
-            });
+            var summary = CoinUi.CreateLabel(CoinUi.Text($"已决定 {_decided.Count}/{run.Players.Count} · {_relics.Count} 件遗物",
+                $"Decided {_decided.Count}/{run.Players.Count} · {_relics.Count} relics"), accent: true);
+            summary.HorizontalAlignment = HorizontalAlignment.Center;
+            view.AddChild(summary);
             var flip = CoinUi.AddFlipButton(view, CoinScene.Treasure);
             flip.Disabled = _waiting || _decided.Contains(localId);
             flip.Pressed += () => Request(CoinAction.Flip);
@@ -256,11 +262,16 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
         }
         else
         {
-            view.AddChild(new Label { Text = CoinUi.Text($"第 {_round} 轮 · 已选择 {_votes.Count}/{run.Players.Count}",
-                $"Round {_round} · Chosen {_votes.Count}/{run.Players.Count}"), HorizontalAlignment = HorizontalAlignment.Center });
+            var summary = CoinUi.CreateLabel(CoinUi.Text($"第 {_round} 轮 · 已选择 {_votes.Count}/{run.Players.Count}",
+                $"Round {_round} · Chosen {_votes.Count}/{run.Players.Count}"), accent: true);
+            summary.HorizontalAlignment = HorizontalAlignment.Center;
+            view.AddChild(summary);
             if (_lastRound != null)
-                view.AddChild(new Label { Text = CoinUi.Text($"上一轮获得 {_lastRound}", $"Received in the last round: {_lastRound}") });
+                view.AddChild(CoinUi.CreateLabel(CoinUi.Text($"上一轮获得 {_lastRound}", $"Received in the last round: {_lastRound}")));
         }
+
+        if (_lastMultiplier > 0)
+            view.AddChild(CoinUi.CreateLabel(CoinUi.Text($"最近一次掷中 ×{_lastMultiplier}", $"Last successful flip ×{_lastMultiplier}"), accent: true));
 
         RenderSlots(view, localId);
     }
@@ -275,7 +286,7 @@ internal sealed class TreasureScene(TreasureRoomRelicSynchronizer synchronizer, 
         {
             var pages = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
             AddButton(pages, CoinUi.Text("上一页", "Previous"), () => { _page--; Render(); }, _page == 0);
-            pages.AddChild(new Label { Text = CoinUi.Text($"{_page + 1}/{pageCount} 页 · {count} 件", $"{_page + 1}/{pageCount} · {count} relics") });
+            pages.AddChild(CoinUi.CreateLabel(CoinUi.Text($"{_page + 1}/{pageCount} 页 · {count} 件", $"{_page + 1}/{pageCount} · {count} relics")));
             AddButton(pages, CoinUi.Text("下一页", "Next"), () => { _page++; Render(); }, _page == pageCount - 1);
             view.AddChild(pages);
         }

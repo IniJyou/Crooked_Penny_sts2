@@ -6,20 +6,70 @@ namespace CrookedPenny;
 internal static class CoinUi
 {
     private const string CoinIcon = "res://CrookedPenny/coin.res";
+    private static readonly Color Parchment = new("f4e4bf");
+    private static readonly Color Gold = new("eed492");
+    private static readonly Color Muted = new("b9b9a7");
+    private static readonly StyleBoxFlat Panel = Frame("172c36f8", "927648", 10, 12, 8, 2, 5);
+    private static readonly StyleBoxFlat Normal = Frame("294653", "58737a", 7, 12, 5);
+    private static readonly StyleBoxFlat Featured = Frame("354950", "ba9156", 9, 12, 5, 2, 3);
+    private static readonly StyleBoxFlat Hovered = Frame("3c606c", "e1bb77", 7, 12, 5, 2);
+    private static readonly StyleBoxFlat Pressed = Frame("213a46", "9e7849", 7, 12, 5);
+    private static readonly StyleBoxFlat Disabled = Frame("25343e", "52616a", 7, 12, 5);
+    private static readonly StyleBoxFlat Won = Frame("3e482f", "c9a768", 9, 12, 5, 2);
+    private static readonly StyleBoxFlat Lost = Frame("443039", "9f6d63", 9, 12, 5, 2);
+    private static readonly StyleBoxFlat Focus = Frame("00000000", "f4dfa3", 8, 0, 0, 2);
+
     private static bool IsChinese => LocManager.Instance.Language is "zhs" or "zht";
     internal static string Text(string chinese, string english) => IsChinese ? chinese : english;
 
-    internal static Button CreateButton(string label)
+    private static StyleBoxFlat Frame(string color, string border, int corner, float paddingX, float paddingY,
+        int borderWidth = 1, int shadow = 0)
     {
-        var button = new Button { Text = label, CustomMinimumSize = new Vector2(0, 44) };
+        var style = new StyleBoxFlat
+        {
+            BgColor = new Color(color), BorderColor = new Color(border),
+            ContentMarginLeft = paddingX, ContentMarginRight = paddingX,
+            ContentMarginTop = paddingY, ContentMarginBottom = paddingY,
+            ShadowSize = shadow, ShadowOffset = new Vector2(0, shadow / 2f)
+        };
+        style.SetCornerRadiusAll(corner);
+        style.SetBorderWidthAll(borderWidth);
+        return style;
+    }
+
+    internal static void StylePanel(PanelContainer panel) => panel.AddThemeStyleboxOverride("panel", Panel);
+
+    internal static Label CreateLabel(string text, bool accent = false)
+    {
+        var label = new Label { Text = text };
+        label.AddThemeColorOverride("font_color", accent ? Gold : Parchment);
+        return label;
+    }
+
+    internal static Button CreateButton(string label, bool featured = false)
+    {
+        var button = new Button { Text = label, CustomMinimumSize = new Vector2(0, 44),
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand };
         button.AddThemeFontSizeOverride("font_size", 23);
+        button.AddThemeStyleboxOverride("normal", featured ? Featured : Normal);
+        button.AddThemeStyleboxOverride("hover", Hovered);
+        button.AddThemeStyleboxOverride("pressed", Pressed);
+        button.AddThemeStyleboxOverride("hover_pressed", Pressed);
+        button.AddThemeStyleboxOverride("disabled", Disabled);
+        button.AddThemeStyleboxOverride("focus", Focus);
+        button.AddThemeColorOverride("font_color", featured ? Gold : Parchment);
+        button.AddThemeColorOverride("font_hover_color", new Color("fff2c8"));
+        button.AddThemeColorOverride("font_pressed_color", Gold);
+        button.AddThemeColorOverride("font_hover_pressed_color", Gold);
+        button.AddThemeColorOverride("font_focus_color", Gold);
+        button.AddThemeColorOverride("font_disabled_color", Muted);
         return button;
     }
 
     internal static Button AddFlipButton(Control parent, CoinScene scene)
     {
         var title = Text("使用弯币", "Use Crooked Penny");
-        var button = CreateButton("");
+        var button = CreateButton("", featured: true);
         button.Name = "CrookedPennyFlip";
         button.AccessibilityName = title;
         button.CustomMinimumSize = new Vector2(120, 120);
@@ -143,25 +193,38 @@ internal static class CoinUi
             return Text("成功概率和倍率由房主设定。", "The host sets the success chance and multiplier.");
 
         var multiplier = rules.Multiplier;
-        var success = scene switch
+        var success = rules.RandomMultiplier ? Text("掷中后随机抽取 ×2 至 ×10。", "On success, roll a random multiplier from ×2 to ×10.") : "";
+        var effect = (scene, rules.RandomMultiplier) switch
         {
-            CoinScene.Merchant => Text($"在售卡牌、遗物和药水变为 ×{multiplier}，副本免费，额外 {multiplier - 1} 次免费删牌。",
+            (CoinScene.Merchant, true) => Text("在售物品副本免费，额外免费删牌次数为抽中倍率减一。",
+                "Stocked items are copied for free. Extra free removals equal the rolled multiplier minus one."),
+            (CoinScene.Merchant, false) => Text($"在售卡牌、遗物和药水变为 ×{multiplier}，副本免费，额外 {multiplier - 1} 次免费删牌。",
                 $"Stocked cards, relics and potions ×{multiplier}, with free copies and {multiplier - 1} extra free card removals."),
-            CoinScene.Ancient => Text($"从这组选项独立选择 {multiplier} 次。", $"Choose from the same options {multiplier} times."),
-            CoinScene.Treasure => Text($"待领遗物数量 ×{multiplier}。", $"Multiply the remaining relics by {multiplier}."),
+            (CoinScene.Ancient, true) => Text("按抽中的次数从这组选项独立选择。", "Choose from these options as many times as rolled."),
+            (CoinScene.Ancient, false) => Text($"从这组选项独立选择 {multiplier} 次。", $"Choose from the same options {multiplier} times."),
+            (CoinScene.Treasure, true) => Text("待领遗物数量按抽中的倍率增加。", "Multiply the remaining relics by the roll."),
+            (CoinScene.Treasure, false) => Text($"待领遗物数量 ×{multiplier}。", $"Multiply the remaining relics by {multiplier}."),
+            (_, true) => Text("尚未领取的可复制奖励按抽中的倍率增加。", "Multiply eligible unclaimed rewards by the roll."),
             _ => Text($"可复制的未领奖励 ×{multiplier}。", $"Multiply eligible unclaimed rewards by {multiplier}.")
         };
         var failure = scene == CoinScene.Merchant
             ? Text("清空商店并留下 1 金币。", "Empty the shop and leave 1 gold.")
             : Text("清空剩余奖励并发放 1 金币。", "Clear the remaining rewards and award 1 gold.");
-        return Text($"成功 {rules.SuccessPercent}% · {success}\n失败 {100 - rules.SuccessPercent}% · {failure}",
-            $"{rules.SuccessPercent}% success · {success}\n{100 - rules.SuccessPercent}% failure · {failure}");
+        var successDetails = rules.RandomMultiplier ? $"{success}\n{effect}" : effect;
+        return Text($"成功 {rules.SuccessPercent}% · {successDetails}\n失败 {100 - rules.SuccessPercent}% · {failure}",
+            $"{rules.SuccessPercent}% success · {successDetails}\n{100 - rules.SuccessPercent}% failure · {failure}");
     }
 
-    internal static void ShowResult(Button button, CoinResult result)
+    internal static void ShowResult(Button button, CoinResult result, int multiplier)
     {
         button.Disabled = true;
-        button.Text = result == CoinResult.Won ? Text("掷中", "Won the flip") : Text("掷空", "Lost the flip");
+        var won = result == CoinResult.Won;
+        button.Text = won ? Text($"掷中 ×{multiplier}", $"Won ×{multiplier}") : Text("掷空", "Lost the flip");
+        button.VerticalIconAlignment = VerticalAlignment.Top;
+        button.CustomMinimumSize = new Vector2(120, 142);
+        button.AddThemeStyleboxOverride("disabled", won ? Won : Lost);
+        button.AddThemeColorOverride("font_disabled_color", won ? Gold : new Color("ecc5b7"));
+        button.AddThemeColorOverride("icon_disabled_color", won ? Colors.White : new Color("e2b7ab"));
         button.AccessibilityName = button.Text;
         button.TooltipText = $"{button.Text}\n{Text("按住右键拖动图标", "Right-drag to move the icon")}";
     }

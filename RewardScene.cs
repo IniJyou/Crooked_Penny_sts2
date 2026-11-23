@@ -28,6 +28,7 @@ internal sealed class RewardScene(RewardsSet set) : ICoinScene
     private Button? _button;
     private bool _waiting;
     private CoinResult _result;
+    private int _multiplier;
 
     public void Rejected()
     {
@@ -74,6 +75,7 @@ internal sealed class RewardScene(RewardsSet set) : ICoinScene
             : [new GoldReward(1, set.Player)];
 
         _result = command.Won ? CoinResult.Won : CoinResult.Lost;
+        _multiplier = command.Multiplier;
         set.Rewards.AddRange(additions);
         if (!command.Won)
         {
@@ -101,7 +103,7 @@ internal sealed class RewardScene(RewardsSet set) : ICoinScene
             }
 
             UpdateScreen(screen);
-            CoinUi.ShowResult(button, _result);
+            CoinUi.ShowResult(button, _result, _multiplier);
         }
 
         Log.Info($"[CrookedPenny] Reward set {set.Id}: {_result}, {additions.Length} added.");
@@ -124,7 +126,7 @@ internal sealed class RewardScene(RewardsSet set) : ICoinScene
         _button = CoinUi.AddFlipButton(coinArea, scene);
         screen.Completed += coinArea.Hide;
         if (_result != CoinResult.Pending)
-            CoinUi.ShowResult(_button, _result);
+            CoinUi.ShowResult(_button, _result, _multiplier);
         _button.Pressed += () =>
         {
             if (_waiting || NOverlayStack.Instance?.Peek() != screen || Rows(screen).Count == 0 ||

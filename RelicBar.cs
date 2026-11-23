@@ -16,11 +16,9 @@ internal sealed class RelicBar
     private RelicBar(NRelicInventory inventory)
     {
         _inventory = inventory;
-        _toggle = new Button
-        {
-            Name = "CrookedPennyRelicToggle", Visible = false,
-            MouseDefaultCursorShape = Control.CursorShape.PointingHand
-        };
+        _toggle = CoinUi.CreateButton("", featured: true);
+        _toggle.Name = "CrookedPennyRelicToggle";
+        _toggle.Visible = false;
         _toggle.AddThemeFontSizeOverride("font_size", 20);
         inventory.AddChild(_toggle);
         _toggle.Pressed += () =>

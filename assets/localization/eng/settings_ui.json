@@ -1,4 +1,5 @@
 {
   "CROOKEDPENNY-SUCCESS_PERCENT.title": "Success chance",
-  "CROOKEDPENNY-REWARD_MULTIPLIER.title": "Success multiplier"
+  "CROOKEDPENNY-RANDOM_MULTIPLIER.title": "Random multiplier (×2–×10)",
+  "CROOKEDPENNY-REWARD_MULTIPLIER.title": "Fixed multiplier"
 }

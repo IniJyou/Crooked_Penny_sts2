@@ -3,7 +3,7 @@
   "name": "被掰弯的硬币",
   "author": "luoyu",
   "description": "Flip a coin over rewards, merchants, Ancients, and treasure chests.",
-  "version": "v0.3.1",
+  "version": "v0.4.0",
   "has_pck": true,
   "has_dll": true,
   "min_game_version": "0.113.1",

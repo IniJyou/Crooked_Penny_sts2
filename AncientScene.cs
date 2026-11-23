@@ -139,7 +139,9 @@ internal sealed class AncientScene(AncientEventModel ancient, EventOption[] opti
         {
             AnchorLeft = 1, AnchorRight = 1, OffsetLeft = -467, OffsetRight = -30, OffsetTop = 150
         };
+        CoinUi.StylePanel(box);
         _panel = new VBoxContainer();
+        _panel.AddThemeConstantOverride("separation", 6);
         box.AddChild(_panel);
         screen.AddChild(box);
         Render();
@@ -165,7 +167,7 @@ internal sealed class AncientScene(AncientEventModel ancient, EventOption[] opti
             flip.Pressed += () => Request(CoinAction.Flip);
         else
         {
-            CoinUi.ShowResult(flip, _result);
+            CoinUi.ShowResult(flip, _result, _choices);
             _screen?.Layout?.DisableEventOptions();
             _screen?.Layout?.ClearOptions();
         }
@@ -178,7 +180,7 @@ internal sealed class AncientScene(AncientEventModel ancient, EventOption[] opti
         }
         else if (_result == CoinResult.Won)
         {
-            panel.AddChild(new Label { Text = CoinUi.Text($"第 {_round}/{_choices} 次选择", $"Choice {_round}/{_choices}") });
+            panel.AddChild(CoinUi.CreateLabel(CoinUi.Text($"第 {_round}/{_choices} 次选择", $"Choice {_round}/{_choices}"), accent: true));
             for (var i = 0; i < options.Length; i++)
             {
                 if (options[i].IsLocked)

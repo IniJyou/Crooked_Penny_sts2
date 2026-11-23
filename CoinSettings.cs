@@ -9,10 +9,13 @@ using MegaCrit.Sts2.Core.Runs;
 
 namespace CrookedPenny;
 
-internal readonly record struct CoinRules(int SuccessPercent, int Multiplier)
+internal readonly record struct CoinRules(int SuccessPercent, int Multiplier, bool RandomMultiplier)
 {
-    internal static CoinRules From(int successPercent, int multiplier) =>
-        new(Math.Clamp(successPercent, 0, 100), Math.Clamp(multiplier, 1, 10));
+    internal const int MinimumRandomMultiplier = 2;
+    internal const int MaximumMultiplier = 10;
+
+    internal static CoinRules From(int successPercent, int multiplier, bool randomMultiplier) =>
+        new(Math.Clamp(successPercent, 0, 100), Math.Clamp(multiplier, 1, MaximumMultiplier), randomMultiplier);
 }
 
 public sealed class CoinSettings : SimpleModConfig
@@ -27,14 +30,16 @@ public sealed class CoinSettings : SimpleModConfig
         set => _successPercent = Math.Clamp(value, 0, 100);
     }
 
-    [ConfigSlider(1, 10, Format = "×{0}")]
+    public static bool RandomMultiplier { get; set; }
+
+    [ConfigSlider(1, CoinRules.MaximumMultiplier, Format = "×{0}")]
     public static int RewardMultiplier
     {
         get => _multiplier;
-        set => _multiplier = Math.Clamp(value, 1, 10);
+        set => _multiplier = Math.Clamp(value, 1, CoinRules.MaximumMultiplier);
     }
 
-    internal static CoinRules Current => new(SuccessPercent, RewardMultiplier);
+    internal static CoinRules Current => new(SuccessPercent, RewardMultiplier, RandomMultiplier);
 
     internal static void Register()
     {
@@ -87,6 +92,7 @@ internal static class CoinRulesSync
 
 public sealed class CoinRulesMessage : ICustomMessage
 {
+    private const int RandomMultiplierBit = 1 << 4;
     internal bool Request { get; private set; } = true;
     internal CoinRules Rules { get; private set; }
     public bool ShouldBroadcast => false;
@@ -108,13 +114,18 @@ public sealed class CoinRulesMessage : ICustomMessage
             return;
 
         writer.WriteInt(Rules.SuccessPercent, 8);
-        writer.WriteInt(Rules.Multiplier, 5);
+        // Use the spare bit in the multiplier field to keep the rules packet the same size.
+        writer.WriteInt(Rules.Multiplier | (Rules.RandomMultiplier ? RandomMultiplierBit : 0), 5);
     }
 
     public void Deserialize(PacketReader reader)
     {
         Request = reader.ReadBool();
-        if (!Request)
-            Rules = CoinRules.From(reader.ReadInt(8), reader.ReadInt(5));
+        if (Request)
+            return;
+
+        var chance = reader.ReadInt(8);
+        var multiplier = reader.ReadInt(5);
+        Rules = CoinRules.From(chance, multiplier & (RandomMultiplierBit - 1), (multiplier & RandomMultiplierBit) != 0);
     }
 }

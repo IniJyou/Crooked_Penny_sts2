@@ -110,11 +110,15 @@ internal static class CoinNetwork
             }
         }
 
+        var rules = CoinSettings.Current;
+        var won = message.Command.Action == CoinAction.Flip && FlipCoin();
         var command = message.Command with
         {
-            Won = message.Command.Action == CoinAction.Flip && FlipCoin(),
+            Won = won,
             Seed = RandomNumberGenerator.GetInt32(int.MaxValue),
-            Multiplier = CoinSettings.Current.Multiplier
+            Multiplier = won && rules.RandomMultiplier
+                ? RandomNumberGenerator.GetInt32(CoinRules.MinimumRandomMultiplier, CoinRules.MaximumMultiplier + 1)
+                : rules.Multiplier
         };
         if (_service.Type == NetGameType.Host)
             CustomTargetedMessageWrapper.Send(new CoinMessage(_location, message.Key, command, true));
@@ -194,7 +198,7 @@ public sealed class CoinMessage : ICustomTargetedMessage
         Key = new CoinKey((CoinScene)reader.ReadInt(), reader.ReadULong(), reader.ReadInt());
         Command = new CoinCommand(reader.ReadULong(), (CoinAction)reader.ReadInt(), reader.ReadInt(), reader.ReadInt(), reader.ReadBool(), reader.ReadInt())
         {
-            Multiplier = Math.Clamp(reader.ReadInt(5), 1, 10)
+            Multiplier = Math.Clamp(reader.ReadInt(5), 1, CoinRules.MaximumMultiplier)
         };
         Confirmed = reader.ReadBool();
     }
